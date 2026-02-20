@@ -166,7 +166,7 @@ function sendImage(file) {
 // =======================
 
 ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "auth", deviceId }));
+    ws.send(JSON.stringify({ type: "auth", deviceId, username}));
     addSystem("[Connected]");
 };
 
