@@ -334,7 +334,7 @@ async def ws_handler(request):
             rooms[code]["clients"].add(ws)
 
             await ws.send_str(f"[Room created] Code: {code}")
-            await send_user_list()
+            await send_user_list(request.app)
             continue
 
         # =====================
@@ -380,7 +380,7 @@ async def ws_handler(request):
     usernames.pop(ws, None)
     online_users.discard(name)
 
-    await send_user_list()
+    await send_user_list(request.app)
 
     return ws
 
