@@ -1,49 +1,76 @@
 // =======================
 // DYNAMIC TITLE
 // =======================
-const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcome t", "Welcome to ", "Welcome to R", "Welcome to Ra", "Welcome to Ram", "Welcome to Ramb", "Welcome to Rambl", "Welcome to Ramblu", "Welcome to Ramblur", "Welcome to Ramblurr", "Welcome to Ramblurr!", "~ Enjoy your stay! ~"];
+const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcome t", "Welcome to ", "Welcome to R", "Welcome to Ra", "Welcome to Ram", "Welcome to Ramb", "Welcome to Rambl", "Welcome to Ramblu", "Welcome to Ramblur", "Welcome to Ramblurr", "Welcome to Ramblurr!", "~ Enjoy your stay! ~", "", "~ Enjoy your stay! ~", ""];
         let index = 0;
 
         function changeTitle() {
             document.title = titles[index];
-            index = (index + 1) % titles.length;
+            if (index != 18) {
+                index = (index + 1) % titles.length;
+                setInterval(250); 
+            } else {
+                setInterval(1000);
+                index = 19;
+                setInterval(500);
+                index = 20;
+                setInterval(1000);
+                index = 21;
+                setInterval(1000);
+                index = 22;
+                setInterval(1000);
+                index = 0;
+            }
         }
-
-        setInterval(changeTitle, 500);
 
 // =======================
 // DEVICE ID (persistent)
 // =======================
 
-let deviceId = localStorage.getItem("deviceId");
-
-if (!deviceId) {
-    deviceId = crypto.randomUUID();
-    localStorage.setItem("deviceId", deviceId);
-}
-
-let username = localStorage.getItem("username");
-
-if (!username) {
-    username = prompt("Enter a username (3-20 characters, letters/numbers/_):");
-
-    if (username) {
-        fetch("/set_username", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                device: deviceId,
-                name: username
-            })
-        }).then(res => res.json()).then(data => {
-            if (data.success) {
-                localStorage.setItem("username", username);
-            } else {
-                alert(data.error);
-            }
-        });
+window.addEventListener("DOMContentLoaded", () => {
+    let deviceId = localStorage.getItem("deviceId");
+    if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        localStorage.setItem("deviceId", deviceId);
     }
-}
+
+    fetch(`/get_username?device=${deviceId}`)
+        .then(res => res.json())
+        .then(data => {
+            let username = data.username || localStorage.getItem("username");
+
+            if (!username) {
+                username = prompt("Enter a username (3-20 characters, letters/numbers/_):");
+                if (username) {
+                    fetch("/set_username", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ device: deviceId, name: username })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            localStorage.setItem("username", username);
+                        } else {
+                            alert(data.error);
+                        }
+                    });
+                }
+            } else {
+                localStorage.setItem("username", username);
+            }
+
+            const ws = new WebSocket(`ws://${location.host}/ws`);
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: "auth",
+                    deviceId,
+                    username: localStorage.getItem("username")
+                }));
+            };
+        });
+});
+
 
 // =======================
 // ELEMENTS
