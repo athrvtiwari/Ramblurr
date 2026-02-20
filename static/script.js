@@ -1,7 +1,7 @@
 // =======================
 // DYNAMIC TITLE
 // =======================
-const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcome t", "Welcome to ", "Welcome to R", "Welcome to Ra", "Welcome to Ram", "Welcome to Ramb", "Welcome to Rambl", "Welcome to Ramblu", "Welcome to Ramblur", "Welcome to Ramblurr", "Welcome to Ramblurr!", " ", "~ Enjoy your stay! ~", " ", "~ Enjoy your stay!", ""];
+const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcome t", "Welcome to ", "Welcome to R", "Welcome to Ra", "Welcome to Ram", "Welcome to Ramb", "Welcome to Rambl", "Welcome to Ramblu", "Welcome to Ramblur", "Welcome to Ramblurr", "Welcome to Ramblurr!", "~ Enjoy your stay! ~", "~ Enjoy your stay! ~", "~ Enjoy your stay! ~", "~ Enjoy your stay!", ""];
         let index = 0;
 
         function changeTitle() {
@@ -333,6 +333,7 @@ document.addEventListener("click", (e) => {
         emojiPicker.classList.add("hidden");
     }
 });
+
 
 
 
