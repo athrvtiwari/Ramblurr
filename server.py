@@ -29,7 +29,7 @@ async def init_db(app):
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users(
                 device TEXT PRIMARY KEY,
-                name TEXT,
+                name TEXT UNIQUE,
                 banned BOOLEAN DEFAULT FALSE
             );
         """)
@@ -55,65 +55,65 @@ async def close_db(app):
 
 async def db_create_room(app, name, private):
     async with app["db"].acquire() as conn:
-        await conn.execute(
+        stmt = await conn.prepare(
             """
             INSERT INTO rooms(name, private)
             VALUES ($1, $2)
             ON CONFLICT (name) DO NOTHING
-            """,
-            name,
-            private
+            """
         )
+        await stmt.execute(name, private)
 
 async def db_add_message(app, room, username, message):
     async with app["db"].acquire() as conn:
-        await conn.execute(
+        stmt = await conn.prepare(
             """
             INSERT INTO messages (room, username, message)
             VALUES ($1, $2, $3)
-            """,
-            room,
-            username,
-            message
+            """
         )
+        await stmt.execute(room, username, message)
 
-async def db_get_messages(app, room, limit=50):
+async def db_get_messages(app, room, limit=10000):
     async with app["db"].acquire() as conn:
-        rows = await conn.fetch(
+        stmt = rows = await conn.prepare(
             """
             SELECT username, message
             FROM messages
             WHERE room=$1
             ORDER BY id ASC
             LIMIT $2
-            """,
-            room,
-            limit
+            """
         )
+        await stmt.fetch(room, limit)
 
     return [f"{r['username']}: {r['message']}" for r in rows]
 
 async def db_get_user(app, device):
     async with app["db"].acquire() as conn:
-        row = await conn.fetchrow(
+        stmt = row = await conn.prepare(
             "SELECT name FROM users WHERE device=$1",
-            device
         )
+        await stmt.fetchrow(device)
 
     return row["name"] if row else None
 
 async def db_set_username(app, device, name):
     async with app["db"].acquire() as conn:
-        await conn.execute(
+        stmt_check = await conn.prepare("SELECT 1 FROM users WHERE name=$1")
+        exists = await stmt_check.fetchrow(name)
+        if exists:
+            raise ValueError("Username already taken")
+
+        stmt = await conn.prepare(
             """
             INSERT INTO users (device, name)
             VALUES ($1, $2)
             ON CONFLICT (device)
             DO UPDATE SET name = EXCLUDED.name
-            """,
-            device,
-            name
+            """
         )
+        await stmt.execute(device, name)        
 
 async def set_username(request):
     try:
@@ -137,6 +137,12 @@ async def set_username(request):
     await db_set_username(request.app, device, name)
     return web.json_response({"success": "True"})
 
+async def db_username_exists(app, name):
+    async with app["db"].acquire() as conn:
+        stmt = await conn.prepare("SELECT 1 FROM users WHERE name=$1")
+        row = await stmt.fetchrow(name)
+        return row is not None
+
 async def send_message(request):
     data = await request.json()
 
@@ -159,12 +165,9 @@ async def db_get_all_users(app):
 
     return [r["name"] for r in rows]
 
-# =======================
-# 2. Add DB helpers for banning
-# =======================
 async def db_ban_user(app, username):
     async with app["db"].acquire() as conn:
-        result = await conn.execute(
+        result = await conn.prepare(
             "UPDATE users SET banned = TRUE WHERE name = $1",
             username
         )
@@ -176,7 +179,7 @@ async def db_is_banned(app, device):
         return row["banned"] if row else False
 
 # ==================================================
-# runtime state (ONLY websocket stuff in RAM)
+# runtime state
 # ==================================================
 
 rooms = {
@@ -193,19 +196,11 @@ online_users = set()
 user_counter = 1
 
 bad_words = {
-    # Profanity
-    'fuck', 'fucking', 'shit', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'asshole', 'crap', 'douche', 'douchebag', 'slut', 'whore', 'cunt', 'nigga', 'nigger', 'nazi', 'retard',
-    
-    # Sexually explicit
+    'fuck', 'fucking', 'shit', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'asshole', 'crap', 'douche', 'douchebag', 
+    'slut', 'whore', 'cunt', 'nigga', 'nigger', 'nazi', 'retard',
     'sex', 'porn', 'xxx', 'cum', 'dildo', 'penis', 'vagina', 'boobs', 'tits', 'anal', 'blowjob', 'handjob', 'milf', 'orgy', 'fetish',
-
-    # Insults / derogatory
     'idiot', 'stupid', 'moron', 'loser', 'jerk', 'dumb', 'twat', 'fag', 'gay', 'lame', 'fatass', 'shithead', 'tool', 'retarded',
-
-    # Slang / abbreviated
-    'wtf', 'omg', 'fml', 'lmao', 'lmfao', 'rofl', 'piss', 'damn', 'hell', 'shitface', 'asswipe',
-
-    # Extreme / controversial
+    'wtf', 'fml', 'lmao', 'lmfao', 'piss', 'hell', 'shitface', 'asswipe',
     'kill', 'rape', 'terrorist', 'bomb', 'suicide', 'shoot', 'killself'
 }
 
@@ -370,7 +365,7 @@ async def ws_handler(request):
             rooms[code]["clients"].add(ws)
 
             await ws.send_str(f"[Room created] Code: {code}")
-            await send_user_list()
+            await send_user_list(request.app)
             continue
 
         # =====================
@@ -390,7 +385,7 @@ async def ws_handler(request):
             user_room[ws] = code
             rooms[code]["clients"].add(ws)
 
-            for old in db_get_messages(request.app, code):
+            for old in await db_get_messages(request.app, code):
                 await ws.send_str(old)
 
             await broadcast(request.app, code, "[Server]", f"[{name} joined]")
@@ -433,7 +428,7 @@ async def ws_handler(request):
     usernames.pop(ws, None)
     online_users.discard(name)
 
-    await send_user_list()
+    await send_user_list(request.app)
 
     return ws
 
