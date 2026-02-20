@@ -9,6 +9,28 @@ if (!deviceId) {
     localStorage.setItem("deviceId", deviceId);
 }
 
+let username = localStorage.getItem("username");
+
+if (!username) {
+    username = prompt("Enter a username (3-20 characters, letters/numbers/_):");
+
+    if (username) {
+        fetch("/set_username", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                device: deviceId,
+                name: username
+            })
+        }).then(res => res.json()).then(data => {
+            if (data.success) {
+                localStorage.setItem("username", username);
+            } else {
+                alert(data.error);
+            }
+        });
+    }
+}
 
 // =======================
 // ELEMENTS
