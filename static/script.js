@@ -108,7 +108,6 @@ function addMessage(sender, text, side) {
     name.className = "sender";
     name.textContent = sender;
 
-    // ✅ colored usernames
     name.style.color = nameToColor(sender);
 
     const bubble = document.createElement("div");
@@ -179,7 +178,8 @@ function sendImage(file) {
 // =======================
 
 ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "auth", deviceId, username}));
+    ws.send(JSON.stringify({ type: "auth", deviceId, username }));
+    myName = username;
     addSystem("[Connected]");
 };
 
