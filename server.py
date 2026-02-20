@@ -62,7 +62,7 @@ async def db_create_room(app, name, private):
             ON CONFLICT (name) DO NOTHING
             """
         )
-        await stmt.execute(name, private)
+        await stmt.fetch(name, private)
 
 async def db_add_message(app, room, username, message):
     async with app["db"].acquire() as conn:
@@ -72,7 +72,7 @@ async def db_add_message(app, room, username, message):
             VALUES ($1, $2, $3)
             """
         )
-        await stmt.execute(room, username, message)
+        await stmt.fetch(room, username, message)
 
 async def db_get_messages(app, room, limit=10000):
     async with app["db"].acquire() as conn:
@@ -113,7 +113,7 @@ async def db_set_username(app, device, name):
             DO UPDATE SET name = EXCLUDED.name
             """
         )
-        await stmt.execute(device, name)        
+        await stmt.fetch(device, name)        
 
 async def set_username(request):
     try:
