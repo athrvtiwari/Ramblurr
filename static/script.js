@@ -6,11 +6,10 @@ const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcom
 
         function changeTitle() {
             document.title = titles[index];
-            if (index < 18) {
-                index = (index + 1) % titles.length;
-                setInterval(250);
-            }
-        }
+            index = (index + 1) % titles.length;
+        } 
+
+        setInterval(changeTitle, 250);
 
 // =======================
 // DEVICE ID (persistent)
@@ -334,4 +333,5 @@ document.addEventListener("click", (e) => {
         emojiPicker.classList.add("hidden");
     }
 });
+
 
