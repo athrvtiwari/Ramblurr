@@ -84,7 +84,7 @@ async def db_get_messages(app, room, limit=10000):
             """
             SELECT username, message
             FROM messages
-            WHERE room = $1
+            WHERE room = $1 AND username != '[Server]'
             ORDER BY id ASC
             LIMIT $2
             """,
@@ -177,7 +177,7 @@ async def send_message(request):
 
     if room in rooms:
         formatted = f"{username}: {message}"
-        for ws in rooms[room]["clients"]:
+        for ws in list(rooms[room]["clients"]):
             try:
                 await ws.send_str(formatted)
             except Exception:
@@ -239,9 +239,11 @@ def sanitize_message(msg):
 
 
 async def broadcast(app, room, username, message):
+    if room not in rooms:
+        return
     await db_add_message(app, room, username, message)
     formatted = f"{username}: {message}"
-    for ws in rooms[room]["clients"]:
+    for ws in list(rooms[room]["clients"]):
         try:
             await ws.send_str(formatted)
         except Exception:
@@ -250,8 +252,10 @@ async def broadcast(app, room, username, message):
 
 async def send_event(room, text):
     """Send a join/leave/ban notification to all clients in a room."""
+    if room not in rooms:
+        return
     payload = json.dumps({"type": "event", "text": text})
-    for ws_client in rooms[room]["clients"]:
+    for ws_client in list(rooms[room]["clients"]):
         try:
             await ws_client.send_str(payload)
         except Exception:
@@ -266,7 +270,7 @@ async def send_user_list(app):
         "all": all_users
     })
     for room in rooms.values():
-        for ws in room["clients"]:
+        for ws in list(room["clients"]):
             try:
                 await ws.send_str(payload)
             except Exception:
@@ -320,8 +324,11 @@ async def ws_handler(request):
         print(f"Auth error: {e}")
 
     if not device:
-        await ws.send_str("[Server]: Authentication failed.")
-        await ws.close()
+        try:
+            await ws.send_str("[Server]: Authentication failed.")
+            await ws.close()
+        except Exception:
+            pass
         return ws
 
     if not name:
@@ -352,7 +359,10 @@ async def ws_handler(request):
     user_room[ws] = "global"
 
     for old in await db_get_messages(request.app, "global"):
-        await ws.send_str(old)
+        try:
+            await ws.send_str(old)
+        except Exception:
+            pass
 
     await send_event("global", f"{name} joined")
     await send_user_list(request.app)
@@ -364,7 +374,6 @@ async def ws_handler(request):
     try:
         async for msg in ws:
 
-            # IMAGE
             if msg.type == web.WSMsgType.BINARY:
                 room = user_room[ws]
 
@@ -380,7 +389,7 @@ async def ws_handler(request):
                     await ws.send_str("[Server]: Only PNG/JPG allowed.")
                     continue
 
-                for client in rooms[room]["clients"]:
+                for client in list(rooms[room]["clients"]):
                     if client != ws:
                         try:
                             await client.send_bytes(msg.data)
@@ -419,7 +428,6 @@ async def ws_handler(request):
                     await send_event(current_room, f"{target_name} has been banned.")
 
                 continue 
-
             # =====================
             # CREATE ROOM
             # =====================
@@ -463,7 +471,10 @@ async def ws_handler(request):
                 rooms[code]["clients"].add(ws)
 
                 for old in await db_get_messages(request.app, code):
-                    await ws.send_str(old)
+                    try:
+                        await ws.send_str(old)
+                    except Exception:
+                        pass
 
                 await send_event(current_room, f"{name} joined")
                 await send_user_list(request.app)
