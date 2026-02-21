@@ -1,5 +1,4 @@
 # ===== Database =====
-rooms.db
 *.db
 *.sqlite
 *.sqlite3

@@ -13,12 +13,12 @@ from aiohttp import web
 async def init_db(app):
     app["db"] = await asyncpg.create_pool(
         dsn=os.environ["DATABASE_URL"],
-        min_size = 1,
-        max_size = 100,
+        min_size=1,
+        max_size=100,
         ssl="require"
     )
 
-    try: 
+    try:
         async with app["db"].acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS rooms(
@@ -45,12 +45,14 @@ async def init_db(app):
                 );
             """)
 
-            await db_create_room(app, "global", False) 
+            await db_create_room(app, "global", False)
     except Exception as e:
         print(f"Database setup failed: {e}")
 
+
 async def close_db(app):
     await app["db"].close()
+
 
 # ==================================================
 # DB helpers
@@ -58,99 +60,134 @@ async def close_db(app):
 
 async def db_create_room(app, name, private):
     async with app["db"].acquire() as conn:
-        stmt = await conn.prepare(
+        await conn.execute(
             """
             INSERT INTO rooms(name, private)
             VALUES ($1, $2)
             ON CONFLICT (name) DO NOTHING
-            """
+            """,
+            name, private
         )
-        await stmt.execute(name, private)
+
 
 async def db_add_message(app, room, username, message):
     async with app["db"].acquire() as conn:
-        stmt = await conn.prepare(
-            "INSERT INTO messages (room, username, message) VALUES ($1, $2, $3)"
+        await conn.execute(
+            "INSERT INTO messages (room, username, message) VALUES ($1, $2, $3)",
+            room, username, message
         )
-        await stmt.execute(room, username, message)
+
 
 async def db_get_messages(app, room, limit=10000):
     async with app["db"].acquire() as conn:
-        stmt = await conn.prepare("""
+        rows = await conn.fetch(
+            """
             SELECT username, message
             FROM messages
-            WHERE room=$1
+            WHERE room = $1
             ORDER BY id ASC
             LIMIT $2
-        """)
-        rows = await stmt.fetch(room, limit)
+            """,
+            room, limit
+        )
     return [f"{r['username']}: {r['message']}" for r in rows]
 
-import re
-from aiohttp import web
 
 async def db_username_exists(app, name):
-    async with app['db'].acquire() as conn:
-        row = await conn.fetchrow('SELECT 1 FROM users WHERE name=$1', name)
+    async with app["db"].acquire() as conn:
+        row = await conn.fetchrow("SELECT 1 FROM users WHERE name = $1", name)
         return row is not None
 
+
 async def db_get_user(app, device):
-    async with app['db'].acquire() as conn:
-        row = await conn.fetchrow('SELECT name FROM users WHERE device=$1', device)
-        return row['name'] if row else None
+    async with app["db"].acquire() as conn:
+        row = await conn.fetchrow("SELECT name FROM users WHERE device = $1", device)
+        return row["name"] if row else None
+
 
 async def db_set_username(app, device, name):
     if not re.match(r'^[A-Za-z0-9_]{3,20}$', name):
         return False
 
-    if await db_username_exists(app, name):
-        return False
-
     try:
-        async with app['db'].acquire() as conn:
-            await conn.execute(
-                '''INSERT INTO users(device, name) VALUES($1, $2)
-                   ON CONFLICT (device) DO UPDATE SET name = EXCLUDED.name''',
+        async with app["db"].acquire() as conn:
+            result = await conn.execute(
+                """
+                INSERT INTO users(device, name) VALUES($1, $2)
+                ON CONFLICT (device) DO UPDATE SET name = EXCLUDED.name
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM users WHERE name = $2 AND device != $1
+                )
+                """,
                 device, name
             )
-        return True
+        return result.split()[-1] != "0"
     except Exception as e:
+        print(f"db_set_username error: {e}")
         return False
 
-async def send_message(request):
-    data = await request.json()
 
-    device = data["device"]
-    room = data["room"]
-    message = data["message"]
+async def db_get_all_users(app):
+    async with app["db"].acquire() as conn:
+        rows = await conn.fetch("SELECT name FROM users")
+    return [r["name"] for r in rows]
+
+
+async def db_ban_user(app, username):
+    async with app["db"].acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET banned = TRUE WHERE name = $1",
+            username
+        )
+
+
+async def db_is_banned(app, device):
+    async with app["db"].acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT banned FROM users WHERE device = $1", device
+        )
+        return row["banned"] if row else False
+
+
+# ==================================================
+# HTTP send_message route
+# ==================================================
+
+async def send_message(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Invalid JSON"}, status=400)
+
+    device = data.get("device")
+    room = data.get("room")
+    message = data.get("message")
+
+    if not device or not room or not message:
+        return web.json_response({"ok": False, "error": "Missing fields"}, status=400)
+    
+    if not isinstance(device, str) or not isinstance(room, str) or not isinstance(message, str):
+        return web.json_response({"ok": False, "error": "Invalid field types"}, status=400)
 
     username = await db_get_user(request.app, device)
-
     if not username:
         username = "Anonymous"
 
     await db_add_message(request.app, room, username, message)
 
+    if room in rooms:
+        formatted = f"{username}: {message}"
+        for ws in rooms[room]["clients"]:
+            try:
+                await ws.send_str(formatted)
+            except Exception:
+                pass
+
     return web.json_response({"ok": True})
 
-async def db_get_all_users(app):
-    async with app["db"].acquire() as conn:
-        rows = await conn.fetch("SELECT name FROM users")
-
-    return [r["name"] for r in rows]
-
-async def db_ban_user(app, username):
-    async with app["db"].acquire() as conn:
-        stmt = await conn.prepare("UPDATE users SET banned = TRUE WHERE name = $1")
-        await stmt.execute(username)
-
-async def db_is_banned(app, device):
-    async with app["db"].acquire() as conn:
-        row = await conn.fetchrow("SELECT banned FROM users WHERE device=$1", device)
-        return row["banned"] if row else False
 
 # ==================================================
-# runtime state
+# Runtime state
 # ==================================================
 
 rooms = {
@@ -167,7 +204,7 @@ online_users = set()
 user_counter = 1
 
 bad_words = {
-    'fuck', 'fucking', 'shit', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'asshole', 'crap', 'douche', 'douchebag', 
+    'fuck', 'fucking', 'shit', 'bitch', 'bastard', 'dick', 'cock', 'pussy', 'asshole', 'crap', 'douche', 'douchebag',
     'slut', 'whore', 'cunt', 'nigga', 'nigger', 'nazi', 'retard',
     'sex', 'porn', 'xxx', 'cum', 'dildo', 'penis', 'vagina', 'boobs', 'tits', 'anal', 'blowjob', 'handjob', 'milf', 'orgy', 'fetish',
     'idiot', 'stupid', 'moron', 'loser', 'jerk', 'dumb', 'twat', 'fag', 'gay', 'lame', 'fatass', 'shithead', 'tool', 'retarded',
@@ -177,9 +214,13 @@ bad_words = {
 
 MAX_SIZE = 25 * 1024 * 1024
 
+ADMIN_DEVICES = {"351843eb-f2bc-4769-8430-6235a7feb22a"}
+
+DEVICE_ID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
 
 # ==================================================
-# helpers
+# Helpers
 # ==================================================
 
 def make_code():
@@ -192,13 +233,21 @@ def filter_text(msg):
     return msg
 
 
+def sanitize_message(msg):
+    msg = msg.replace('\x00', '')
+    return msg[:2000]
+
+
 async def broadcast(app, room, username, message):
     await db_add_message(app, room, username, message)
 
     formatted = f"{username}: {message}"
 
     for ws in rooms[room]["clients"]:
-        await ws.send_str(formatted)
+        try:
+            await ws.send_str(formatted)
+        except Exception:
+            pass
 
 
 async def send_user_list(app):
@@ -212,67 +261,96 @@ async def send_user_list(app):
 
     for room in rooms.values():
         for ws in room["clients"]:
-            await ws.send_str(payload)
+            try:
+                await ws.send_str(payload)
+            except Exception:
+                pass
 
 
 # ==================================================
-# websocket handler
+# WebSocket handler
 # ==================================================
 
 async def ws_handler(request):
     global user_counter
 
-    ws = web.WebSocketResponse()
+    ws = web.WebSocketResponse(max_msg_size=MAX_SIZE + 1024)
     await ws.prepare(request)
+
+    device = None
+    name = None
 
     # =====================
     # AUTH
     # =====================
 
-    auth_msg = await ws.receive()
-    name = None
+    try:
+        auth_msg = await ws.receive()
 
-    if auth_msg.type == web.WSMsgType.TEXT:
-        try:
+        if auth_msg.type == web.WSMsgType.TEXT:
             data = json.loads(auth_msg.data)
 
             if data.get("type") == "auth":
-                device = data["deviceId"]
-                name = data.get("username")
+                raw_device = data.get("deviceId", "")
 
-                if name:
-                    await db_set_username(request.app, device, name)
+                if not DEVICE_ID_PATTERN.match(raw_device):
+                    await ws.send_str("[Server]: Invalid device ID.")
+                    await ws.close()
+                    return ws
+
+                device = raw_device
+                requested_name = data.get("username")
+
+                if requested_name:
+                    success = await db_set_username(request.app, device, requested_name)
+                    if success:
+                        name = requested_name
+                    else:
+                        name = await db_get_user(request.app, device)
                 else:
                     name = await db_get_user(request.app, device)
-                    if not name:
-                        name = f"Anonymous{user_counter:03d}"
-                        await db_set_username(request.app, device, name)
-                        user_counter += 1                    
-        except:
-            pass
+
+    except Exception as e:
+        print(f"Auth error: {e}")
+
+    if not device:
+        await ws.send_str("[Server]: Authentication failed.")
+        await ws.close()
+        return ws
 
     if not name:
-        name = f"Anonymous{user_counter:03d}"
-        user_counter += 1
+        while True:
+            candidate = f"Anonymous{user_counter:03d}"
+            user_counter += 1
+            success = await db_set_username(request.app, device, candidate)
+            if success:
+                name = candidate
+                break
+
+            if user_counter > 99999:
+                await ws.send_str("[Server]: Could not assign a username.")
+                await ws.close()
+                return ws
 
     usernames[ws] = name
     online_users.add(name)
-
     ws.device = device
+
+    await ws.send_str(json.dumps({"type": "auth_ok", "username": os.name}))
 
     # =====================
     # JOIN GLOBAL
     # =====================
 
     current_room = "global"
-
     rooms["global"]["clients"].add(ws)
     user_room[ws] = "global"
 
     for old in await db_get_messages(request.app, "global"):
         await ws.send_str(old)
 
-    await broadcast(request.app, "global", "[Server]", f"[{name} joined]")
+    for ws_client in rooms["global"]["clients"]:
+        await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} joined"}))
     await send_user_list(request.app)
 
     # =====================
@@ -286,34 +364,56 @@ async def ws_handler(request):
             room = user_room[ws]
 
             if not rooms[room]["private"]:
-                await ws.send_str("[Server]: Images only allowed in private rooms")
+                await ws.send_str("[Server]: Images only allowed in private rooms.")
                 continue
 
             if len(msg.data) > MAX_SIZE:
-                await ws.send_str("[Server]: Image too large (max 25MB)")
+                await ws.send_str("[Server]: Image too large (max 25MB).")
                 continue
 
             if not msg.data.startswith(b'\x89PNG') and not msg.data.startswith(b'\xff\xd8'):
-                await ws.send_str("[Server]: Only PNG/JPG allowed")
+                await ws.send_str("[Server]: Only PNG/JPG allowed.")
                 continue
 
             for client in rooms[room]["clients"]:
                 if client != ws:
-                    await client.send_bytes(msg.data)
+                    try:
+                        await client.send_bytes(msg.data)
+                    except Exception:
+                        pass
 
             continue
 
         if msg.type != web.WSMsgType.TEXT:
             continue
 
-        text = msg.data.strip()
+        text = sanitize_message(msg.data.strip())
 
-        # ===========================
-        # CHECK IF USER IS BANNED
-        # ===========================
+        if not text:
+            continue
+
+        # =====================
+        # BAN CHECK
+        # =====================
 
         if await db_is_banned(request.app, device):
             await ws.send_str("[Server]: You are banned and cannot send messages.")
+            continue
+
+        # =====================
+        # ADMIN COMMANDS
+        # =====================
+
+        if text.startswith(".") and device in ADMIN_DEVICES:
+            parts = text.split()
+            cmd = parts[0].lower()
+
+            if cmd == ".ban" and len(parts) > 1:
+                target_name = parts[1]
+                await db_ban_user(request.app, target_name)
+                for ws_client in rooms["global"]["clients"]:
+                    await ws_client.send_str(json.dumps({"type": "event", "text": f"User '{target_name}' has been banned."}))
+
             continue
 
         # =====================
@@ -323,16 +423,17 @@ async def ws_handler(request):
         if text == "/create":
             code = make_code()
 
-            if code not in rooms:
-                rooms[code] = {
-                    "clients": set(),
-                    "private": True
-                }
+            while code in rooms:
+                code = make_code()
 
-                await db_create_room(request.app, code, True)
+            rooms[code] = {
+                "clients": set(),
+                "private": True
+            }
+
+            await db_create_room(request.app, code, True)
 
             rooms[current_room]["clients"].discard(ws)
-
             current_room = code
             user_room[ws] = code
             rooms[code]["clients"].add(ws)
@@ -346,14 +447,17 @@ async def ws_handler(request):
         # =====================
 
         if text.startswith("/join "):
-            code = text.split(" ", 1)[1]
+            code = text.split(" ", 1)[1].strip()
+
+            if not re.match(r'^[A-Z0-9]{6}$', code) and code != "global":
+                await ws.send_str("[Server]: Invalid room code.")
+                continue
 
             if code not in rooms:
                 await ws.send_str("[Room not found]")
                 continue
 
             rooms[current_room]["clients"].discard(ws)
-
             current_room = code
             user_room[ws] = code
             rooms[code]["clients"].add(ws)
@@ -361,7 +465,8 @@ async def ws_handler(request):
             for old in await db_get_messages(request.app, code):
                 await ws.send_str(old)
 
-            await broadcast(request.app, code, "[Server]", f"[{name} joined]")
+            for ws_client in rooms["global"]["clients"]:
+                await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} joined"}))
             await send_user_list(request.app)
             continue
 
@@ -372,51 +477,40 @@ async def ws_handler(request):
         clean = filter_text(text) if current_room == "global" else text
         await broadcast(request.app, current_room, name, clean)
 
-        # ===================
-        # BAN SYSTEM
-        # ===================
-        # =======================
-        admin_devices = ["351843eb-f2bc-4769-8430-6235a7feb22a"]
-        
-        if text.startswith(".") and device in admin_devices:
-            parts = text.split()
-            cmd = parts[0].lower()
-
-            if cmd == ".ban" and len(parts) > 1:
-                target_name = parts[1]
-                await db_ban_user(request.app, target_name)
-
-                await broadcast(request.app, current_room, "[Server]", f"User '{target_name}' has been banned.")
-                continue
-
     # =====================
     # DISCONNECT
     # =====================
 
     rooms[current_room]["clients"].discard(ws)
     user_room.pop(ws, None)
-
-    await broadcast(request.app, current_room, name, "[left]")
-
     usernames.pop(ws, None)
     online_users.discard(name)
 
+    for ws_client in rooms["global"]["clients"]:
+        try:
+            await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} disconnected"}))
+        except Exception:
+            pass
+        
     await send_user_list(request.app)
 
     return ws
 
 
 # ==================================================
-# app setup
+# App setup
 # ==================================================
 
 app = web.Application()
 
 app.router.add_get("/ws", ws_handler)
+app.router.add_post("/send", send_message)
 app.router.add_static("/static/", "./static", show_index=False)
+
 
 async def home(request):
     return web.FileResponse("client.html")
+
 
 app.on_startup.append(init_db)
 app.on_cleanup.append(close_db)
