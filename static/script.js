@@ -134,10 +134,18 @@ function sendImage(file) {
 }
 
 // SOCKET EVENTS
+let token = localStorage.getItem("token");
 
 ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "auth", deviceId, username }));
-    addSystem("Connected");
+    if (!token) {
+        ws.send(JSON.stringify({ type: "register" }));
+    } else {
+        ws.send(JSON.stringify({ type: "auth", token }));
+    }
+
+    if (msg.type === "registered") {
+        localStorage.setItem("token", msg.token);
+    }
 };
 
 ws.onerror = () => addSystem("Connection error");
