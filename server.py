@@ -165,7 +165,7 @@ async def send_message(request):
 
     if not device or not room or not message:
         return web.json_response({"ok": False, "error": "Missing fields"}, status=400)
-    
+
     if not isinstance(device, str) or not isinstance(room, str) or not isinstance(message, str):
         return web.json_response({"ok": False, "error": "Invalid field types"}, status=400)
 
@@ -240,9 +240,7 @@ def sanitize_message(msg):
 
 async def broadcast(app, room, username, message):
     await db_add_message(app, room, username, message)
-
     formatted = f"{username}: {message}"
-
     for ws in rooms[room]["clients"]:
         try:
             await ws.send_str(formatted)
@@ -250,15 +248,23 @@ async def broadcast(app, room, username, message):
             pass
 
 
+async def send_event(room, text):
+    """Send a join/leave/ban notification to all clients in a room."""
+    payload = json.dumps({"type": "event", "text": text})
+    for ws_client in rooms[room]["clients"]:
+        try:
+            await ws_client.send_str(payload)
+        except Exception:
+            pass
+
+
 async def send_user_list(app):
     all_users = await db_get_all_users(app)
-
     payload = json.dumps({
         "type": "users",
         "online": list(online_users),
         "all": all_users
     })
-
     for room in rooms.values():
         for ws in room["clients"]:
             try:
@@ -326,7 +332,6 @@ async def ws_handler(request):
             if success:
                 name = candidate
                 break
-
             if user_counter > 99999:
                 await ws.send_str("[Server]: Could not assign a username.")
                 await ws.close()
@@ -336,7 +341,7 @@ async def ws_handler(request):
     online_users.add(name)
     ws.device = device
 
-    await ws.send_str(json.dumps({"type": "auth_ok", "username": os.name}))
+    await ws.send_str(json.dumps({"type": "auth_ok", "username": name}))
 
     # =====================
     # JOIN GLOBAL
@@ -349,150 +354,142 @@ async def ws_handler(request):
     for old in await db_get_messages(request.app, "global"):
         await ws.send_str(old)
 
-    for ws_client in rooms["global"]["clients"]:
-        await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} joined"}))
+    await send_event("global", f"{name} joined")
     await send_user_list(request.app)
 
     # =====================
     # MAIN LOOP
     # =====================
 
-    async for msg in ws:
+    try:
+        async for msg in ws:
 
-        # IMAGE
-        if msg.type == web.WSMsgType.BINARY:
-            room = user_room[ws]
+            # IMAGE
+            if msg.type == web.WSMsgType.BINARY:
+                room = user_room[ws]
 
-            if not rooms[room]["private"]:
-                await ws.send_str("[Server]: Images only allowed in private rooms.")
+                if not rooms[room]["private"]:
+                    await ws.send_str("[Server]: Images only allowed in private rooms.")
+                    continue
+
+                if len(msg.data) > MAX_SIZE:
+                    await ws.send_str("[Server]: Image too large (max 25MB).")
+                    continue
+
+                if not msg.data.startswith(b'\x89PNG') and not msg.data.startswith(b'\xff\xd8'):
+                    await ws.send_str("[Server]: Only PNG/JPG allowed.")
+                    continue
+
+                for client in rooms[room]["clients"]:
+                    if client != ws:
+                        try:
+                            await client.send_bytes(msg.data)
+                        except Exception:
+                            pass
+
                 continue
 
-            if len(msg.data) > MAX_SIZE:
-                await ws.send_str("[Server]: Image too large (max 25MB).")
+            if msg.type != web.WSMsgType.TEXT:
                 continue
 
-            if not msg.data.startswith(b'\x89PNG') and not msg.data.startswith(b'\xff\xd8'):
-                await ws.send_str("[Server]: Only PNG/JPG allowed.")
+            text = sanitize_message(msg.data.strip())
+
+            if not text:
                 continue
 
-            for client in rooms[room]["clients"]:
-                if client != ws:
-                    try:
-                        await client.send_bytes(msg.data)
-                    except Exception:
-                        pass
+            # =====================
+            # BAN CHECK
+            # =====================
 
-            continue
+            if await db_is_banned(request.app, device):
+                await ws.send_str("[Server]: You are banned and cannot send messages.")
+                continue
 
-        if msg.type != web.WSMsgType.TEXT:
-            continue
+            # =====================
+            # ADMIN COMMANDS
+            # =====================
 
-        text = sanitize_message(msg.data.strip())
+            if text.startswith(".") and device in ADMIN_DEVICES:
+                parts = text.split()
+                cmd = parts[0].lower()
 
-        if not text:
-            continue
+                if cmd == ".ban" and len(parts) > 1:
+                    target_name = parts[1]
+                    await db_ban_user(request.app, target_name)
+                    await send_event(current_room, f"{target_name} has been banned.")
 
-        # =====================
-        # BAN CHECK
-        # =====================
+                continue 
 
-        if await db_is_banned(request.app, device):
-            await ws.send_str("[Server]: You are banned and cannot send messages.")
-            continue
+            # =====================
+            # CREATE ROOM
+            # =====================
 
-        # =====================
-        # ADMIN COMMANDS
-        # =====================
-
-        if text.startswith(".") and device in ADMIN_DEVICES:
-            parts = text.split()
-            cmd = parts[0].lower()
-
-            if cmd == ".ban" and len(parts) > 1:
-                target_name = parts[1]
-                await db_ban_user(request.app, target_name)
-                for ws_client in rooms["global"]["clients"]:
-                    await ws_client.send_str(json.dumps({"type": "event", "text": f"User '{target_name}' has been banned."}))
-
-            continue
-
-        # =====================
-        # CREATE ROOM
-        # =====================
-
-        if text == "/create":
-            code = make_code()
-
-            while code in rooms:
+            if text == "/create":
                 code = make_code()
+                while code in rooms:
+                    code = make_code()
 
-            rooms[code] = {
-                "clients": set(),
-                "private": True
-            }
+                rooms[code] = {"clients": set(), "private": True}
+                await db_create_room(request.app, code, True)
 
-            await db_create_room(request.app, code, True)
+                rooms[current_room]["clients"].discard(ws)
+                current_room = code
+                user_room[ws] = code
+                rooms[code]["clients"].add(ws)
 
-            rooms[current_room]["clients"].discard(ws)
-            current_room = code
-            user_room[ws] = code
-            rooms[code]["clients"].add(ws)
-
-            await ws.send_str(f"[Room created] Code: {code}")
-            await send_user_list(request.app)
-            continue
-
-        # =====================
-        # JOIN ROOM
-        # =====================
-
-        if text.startswith("/join "):
-            code = text.split(" ", 1)[1].strip()
-
-            if not re.match(r'^[A-Z0-9]{6}$', code) and code != "global":
-                await ws.send_str("[Server]: Invalid room code.")
+                await ws.send_str(json.dumps({"type": "event", "text": f"Room created — code: {code}"}))
+                await send_user_list(request.app)
                 continue
 
-            if code not in rooms:
-                await ws.send_str("[Room not found]")
+            # =====================
+            # JOIN ROOM
+            # =====================
+
+            if text.startswith("/join "):
+                code = text.split(" ", 1)[1].strip()
+
+                if not re.match(r'^[A-Z0-9]{6}$', code) and code != "global":
+                    await ws.send_str(json.dumps({"type": "event", "text": "Invalid room code."}))
+                    continue
+
+                if code not in rooms:
+                    await ws.send_str(json.dumps({"type": "event", "text": "Room not found."}))
+                    continue
+
+                await send_event(current_room, f"{name} left")
+                rooms[current_room]["clients"].discard(ws)
+                current_room = code
+                user_room[ws] = code
+                rooms[code]["clients"].add(ws)
+
+                for old in await db_get_messages(request.app, code):
+                    await ws.send_str(old)
+
+                await send_event(current_room, f"{name} joined")
+                await send_user_list(request.app)
                 continue
 
-            rooms[current_room]["clients"].discard(ws)
-            current_room = code
-            user_room[ws] = code
-            rooms[code]["clients"].add(ws)
+            # =====================
+            # NORMAL MESSAGE
+            # =====================
 
-            for old in await db_get_messages(request.app, code):
-                await ws.send_str(old)
+            clean = filter_text(text) if current_room == "global" else text
+            await broadcast(request.app, current_room, name, clean)
 
-            for ws_client in rooms["global"]["clients"]:
-                await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} joined"}))
-            await send_user_list(request.app)
-            continue
+    except Exception as e:
+        print(f"WS loop error for {name}: {e}")
 
+    finally:
         # =====================
-        # NORMAL MESSAGE
+        # DISCONNECT
         # =====================
+        rooms[current_room]["clients"].discard(ws)
+        user_room.pop(ws, None)
+        usernames.pop(ws, None)
+        online_users.discard(name)
 
-        clean = filter_text(text) if current_room == "global" else text
-        await broadcast(request.app, current_room, name, clean)
-
-    # =====================
-    # DISCONNECT
-    # =====================
-
-    rooms[current_room]["clients"].discard(ws)
-    user_room.pop(ws, None)
-    usernames.pop(ws, None)
-    online_users.discard(name)
-
-    for ws_client in rooms["global"]["clients"]:
-        try:
-            await ws_client.send_str(json.dumps({"type": "event", "text": f"{name} disconnected"}))
-        except Exception:
-            pass
-        
-    await send_user_list(request.app)
+        await send_event(current_room, f"{name} disconnected")
+        await send_user_list(request.app)
 
     return ws
 
