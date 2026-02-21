@@ -137,12 +137,12 @@ function sendImage(file) {
 
 ws.onopen = () => {
     ws.send(JSON.stringify({ type: "auth", deviceId, username }));
-    addSystem("[Connected]");
+    addSystem("Connected");
 };
 
-ws.onerror = () => addSystem("[Connection error]");
+ws.onerror = () => addSystem("Connection error");
 
-ws.onclose = () => addSystem("[Disconnected]");
+ws.onclose = () => addSystem("Disconnected");
 
 ws.onmessage = (e) => {
     if (e.data instanceof Blob) {
@@ -154,19 +154,23 @@ ws.onmessage = (e) => {
 
     try {
         const data = JSON.parse(text);
-
-        if (data.type === "users") {
-            renderUsers(data.online, data.all);
-            return;
-        }
-
         if (data.type === "auth_ok") {
             myName = data.username;
             localStorage.setItem("username", myName);
 
             if (username && username !== myName) {
-                addSystem(`[Username "${username}" was unavailable. You are "${myName}"]`);
+                addSystem(`Username "${username}" was unavailable — you are "${myName}"`);
             }
+            return;
+        }
+
+        if (data.type === "event") {
+            addSystem(data.text);
+            return;
+        }
+
+        if (data.type === "users") {
+            renderUsers(data.online, data.all);
             return;
         }
 
@@ -207,7 +211,7 @@ function createRoom() {
 }
 
 function joinRoom() {
-    const code = codeInput.value.trim();
+    const code = codeInput.value.trim().toUpperCase();
     if (code) sendText("/join " + code);
 }
 
