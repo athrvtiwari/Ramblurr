@@ -1,3 +1,10 @@
+const jwt = require("jsonwebtoken");
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET not set");
+}
+
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
@@ -123,8 +130,6 @@ const rooms = {
 const onlineUsers = new Set();
 let userCounter = 1;
 
-const ADMIN_DEVICES = new Set(["351843eb-f2bc-4769-8430-6235a7feb22a"]);
-const DEVICE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_SIZE = 25 * 1024 * 1024;
 
 const BAD_WORDS = new Set([
@@ -202,16 +207,22 @@ app.use("/static", express.static("./static"));
 app.get("/", (req, res) => res.sendFile(__dirname + "/client.html"));
 
 app.post("/send", async (req, res) => {
-    const { device, room, message } = req.body;
+    const { token, room, message } = req.body;
 
-    if (!device || !room || !message) {
-        return res.json({ ok: false, error: "Missing fields" });
-    }
-    if (typeof device !== "string" || typeof room !== "string" || typeof message !== "string") {
-        return res.json({ ok: false, error: "Invalid field types" });
+    if (!token || !room || !message) {
+        return res.json({ ok: false });
     }
 
+    let decoded;
+    try {
+        decoded = jwt.verify(token, JWT_SECRET);
+    } catch {
+        return res.json({ ok: false });
+    }
+
+    const device = decoded.device;
     const username = (await dbGetUser(device)) || "Anonymous";
+
     await dbAddMessage(room, username, message);
 
     if (rooms[room]) {
@@ -232,41 +243,65 @@ const server = http.createServer(app);
 // WebSocket handler
 // ==================================================
 
-const wss = new WebSocket.Server({ server, maxPayload: MAX_SIZE + 1024 });
+const wss = new WebSocket.Server({ server, path: "/ws", maxPayload: MAX_SIZE + 1024 });
 
 wss.on("connection", async (ws) => {
     let device = null;
     let name = null;
     let currentRoom = "global";
+    let role = "user";
 
     // =====================
-    // AUTH — wait for first message
+    // AUTH
     // =====================
-
     const authResult = await new Promise((resolve) => {
-        const timeout = setTimeout(() => resolve(null), 10000); // 10s auth timeout
+        const timeout = setTimeout(() => resolve(null), 10000);
 
-        ws.once("message", async (data) => {
+        ws.onerror("message", async (data) => {
             clearTimeout(timeout);
+
             try {
                 const msg = JSON.parse(data.toString());
-                if (msg.type !== "auth") return resolve(null);
 
-                const rawDevice = msg.deviceId || "";
-                if (!DEVICE_ID_PATTERN.test(rawDevice)) return resolve(null);
+                // REGISTER
+                if (msg.type === "register") {
+                    const newDevice = crypto.randomUUID();
 
-                const dev = rawDevice;
-                const requestedName = msg.username || null;
-                let resolvedName = null;
+                    const token = jwt.sign(
+                        { device: newDevice, role: "user" },
+                        JWT_SECRET,
+                        { expiresIn: "30d" }
+                    );
 
-                if (requestedName) {
-                    const ok = await dbSetUsername(dev, requestedName);
-                    resolvedName = ok ? requestedName : await dbGetUser(dev);
-                } else {
-                    resolvedName = await dbGetUser(dev);
+                    await pool.query(
+                        `INSERT INTO users(device) VALUES($1)
+                         ON CONFLICT (device) DO NOTHING`,
+                        [newDevice]
+                    );
+
+                    ws.send(JSON.stringify({
+                        type: "registered",
+                        token
+                    }));
+
+                    return resolve({ device: newDevice, role: "user" });
+                };
+
+                // RETURNING USER
+                if (msg.type === "auth" && msg.token) {
+                    try {
+                        const decoded = jwt.verify(msg.token, JWT_SECRET);
+
+                        return resolve({
+                            device: decoded.device,
+                            role: decoded.role || "user"
+                        });
+                    } catch {
+                        return resolve(null);
+                    }
                 }
 
-                resolve({ device: dev, name: resolvedName });
+                resolve(null);
             } catch {
                 resolve(null);
             }
@@ -274,13 +309,14 @@ wss.on("connection", async (ws) => {
     });
 
     if (!authResult) {
-        try { ws.send("[Server]: Authentication failed."); ws.close(); } catch {}
+        ws.send("[Server]: Authentication failed.");
+        ws.close();
         return;
     }
 
     device = authResult.device;
-    name = authResult.name;
-
+    role = authResult.role;
+    
     // Assign anonymous name if needed
     if (!name) {
         while (true) {
@@ -358,14 +394,14 @@ wss.on("connection", async (ws) => {
             }
 
             // ADMIN COMMANDS
-            if (text.startsWith(".") && ADMIN_DEVICES.has(device)) {
+            if (text.startsWith(".") && role === "admin") {
                 const parts = text.split(/\s+/);
                 const cmd = parts[0].toLowerCase();
                 if (cmd === ".ban" && parts[1]) {
                     await dbBanUser(parts[1]);
                     await sendEvent(currentRoom, `${parts[1]} has been banned.`);
                 }
-                return; // never broadcast admin commands
+                return; 
             }
 
             // CREATE ROOM
