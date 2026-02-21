@@ -1,15 +1,33 @@
 /* ========================
-   GLOBAL
+   RETRO PIXEL THEME
 ======================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+* {
+    box-sizing: border-box;
+    image-rendering: pixelated;
+}
 
 body {
-    background: radial-gradient(circle at top, #1e1e2f, #0f0f14);
-    color: #e6e6eb;
-    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #c8b89a;
+    background-image:
+        linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+
+    color: #2a1a0e;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+
     margin: 0;
     padding: 20px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    min-height: 100vh;
 }
 
 
@@ -18,11 +36,13 @@ body {
 ======================== */
 
 h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 20px;
+    color: #5a3e1b;
     text-align: center;
-    color: #f5f5f7;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
+    text-shadow: 3px 3px 0px #a07840;
+    letter-spacing: 1px;
 }
 
 
@@ -32,7 +52,33 @@ h1 {
 
 div {
     text-align: center;
-    margin: 6px 0;
+    margin: 4px 0;
+}
+
+.layout {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.chat-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+
+/* ========================
+   PIXEL BORDER MIXIN
+   (used on panels)
+======================== */
+
+.pixel-box {
+    border: 3px solid #5a3e1b;
+    box-shadow:
+        3px 3px 0 #5a3e1b,
+        inset 1px 1px 0 rgba(255,255,255,0.4),
+        inset -1px -1px 0 rgba(0,0,0,0.15);
 }
 
 
@@ -41,127 +87,52 @@ div {
 ======================== */
 
 .chat {
-    width: 500px;
-    height: 400px;
-    margin: 0 auto 10px auto;
+    width: 520px;
+    height: 420px;
+    margin: 0 auto 8px auto;
 
-    padding: 12px;
+    padding: 10px;
     overflow-y: auto;
 
-    background: rgba(25, 25, 35, 0.95);
-    backdrop-filter: blur(6px);
-
-    border-radius: 12px;
+    background: #d4c49a;
+    border: 3px solid #5a3e1b;
     box-shadow:
-        0 10px 25px rgba(0, 0, 0, 0.5),
-        inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        4px 4px 0 #5a3e1b,
+        inset 2px 2px 0 rgba(255,255,255,0.35),
+        inset -2px -2px 0 rgba(0,0,0,0.1);
+
+    border-radius: 0;
 }
 
-
-/* ========================
-   MESSAGES
-======================== */
-
-.msg {
-    margin-bottom: 8px;
-    padding: 6px 8px;
-
-    max-width: 80%;
-    word-wrap: break-word;
-
-    background: rgba(255, 255, 255, 0.04);
-    border-radius: 8px;
-
-    font-size: 14px;
+.chat::-webkit-scrollbar {
+    width: 10px;
 }
 
-.msg.image {
-    padding: 0;
-    background: none;
+.chat::-webkit-scrollbar-track {
+    background: #b8a882;
+    border-left: 2px solid #5a3e1b;
 }
 
-.msg.image img {
-    max-width: 260px;
-    border-radius: 10px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
+.chat::-webkit-scrollbar-thumb {
+    background: #7a5c2e;
+    border: 2px solid #5a3e1b;
 }
-
-
-/* ========================
-   INPUTS
-======================== */
-
-input {
-    background: #1a1a25;
-    color: #e6e6eb;
-
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-
-    padding: 8px 10px;
-    font-family: "Inter", sans-serif;
-    outline: none;
-}
-
-input::placeholder {
-    color: #8b8b9c;
-}
-
-input:focus {
-    border-color: #6ea8fe;
-    box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.25);
-}
-
-
-/* ========================
-   BUTTONS
-======================== */
-
-button {
-    background: linear-gradient(135deg, #6ea8fe, #9a7bff);
-    color: #0f0f14;
-
-    border: none;
-    border-radius: 10px;
-
-    padding: 8px 14px;
-    margin-left: 4px;
-
-    font-weight: 600;
-    cursor: pointer;
-
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(154, 123, 255, 0.4);
-}
-
-button:active {
-    transform: translateY(0);
-    box-shadow: none;
-}
-
-
-/* ========================
-   DRAG & DROP
-======================== */
 
 .chat.dragging {
-    outline: 2px dashed #9a7bff;
-    outline-offset: -6px;
+    outline: 3px dashed #7a5c2e;
+    outline-offset: -4px;
 }
 
+
 /* ========================
-   MESSAGE ALIGNMENT
+   MESSAGE WRAPPERS
 ======================== */
 
 .msg-wrapper {
     display: flex;
     flex-direction: column;
     margin-bottom: 10px;
-    max-width: 80%;
+    max-width: 85%;
 }
 
 .msg-wrapper.other {
@@ -173,107 +144,204 @@ button:active {
     margin-left: auto;
 }
 
+
 /* ========================
    SENDER NAME
 ======================== */
 
 .sender {
-    font-size: 12px;
-    color: #9a9ab0;
-    margin-bottom: 2px;
-    padding-left: 4px;
-    font-weight: 600;
-    letter-spacing: 0.2px;
+    font-size: 8px;
+    margin-bottom: 3px;
+    padding-left: 2px;
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 0.5px;
 }
+
 
 /* ========================
    MESSAGE BUBBLES
 ======================== */
 
 .bubble {
-    padding: 8px 10px;
-    border-radius: 12px;
-    line-height: 1.4;
+    padding: 7px 10px;
+    font-size: 9px;
+    line-height: 1.7;
+    word-break: break-word;
+    font-family: 'Press Start 2P', monospace;
 }
 
 .msg-wrapper.other .bubble {
-    background: rgba(255, 255, 255, 0.06);
-    border-top-left-radius: 4px;
+    background: #f0e8cc;
+    border: 2px solid #5a3e1b;
+    box-shadow: 2px 2px 0 #5a3e1b;
+    border-top-left-radius: 0;
 }
 
 .msg-wrapper.self .bubble {
-    background: linear-gradient(135deg, #6ea8fe, #9a7bff);
-    color: #0f0f14;
-    border-top-right-radius: 4px;
+    background: #8ab86e;
+    border: 2px solid #3a5a1e;
+    box-shadow: 2px 2px 0 #3a5a1e;
+    color: #1a2e0a;
+    border-top-right-radius: 0;
 }
+
+
+/* ========================
+   SYSTEM / EVENT MESSAGES
+======================== */
+
+.system {
+    text-align: center;
+    font-size: 8px;
+    font-family: 'Press Start 2P', monospace;
+    color: #7a5c2e;
+
+    margin: 8px auto;
+    padding: 4px 10px;
+
+    background: #e8d8a8;
+    border: 2px solid #7a5c2e;
+    box-shadow: 2px 2px 0 #7a5c2e;
+
+    display: inline-block;
+    width: auto;
+    max-width: 90%;
+}
+
 
 /* ========================
    IMAGES
 ======================== */
 
 .msg.image {
-    max-width: 260px;
-    border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
 }
 
+.msg.image img,
+.msg-wrapper img {
+    max-width: 240px;
+    border: 3px solid #5a3e1b;
+    box-shadow: 3px 3px 0 #5a3e1b;
+    image-rendering: auto;
+}
+
+
 /* ========================
-   SYSTEM MESSAGES
+   INPUTS
 ======================== */
 
-.system {
-    text-align: center;
-    font-size: 12px;
-    color: #8b8b9c;
-    margin: 6px 0;
+input {
+    background: #f5edd8;
+    color: #2a1a0e;
+
+    border: 2px solid #5a3e1b;
+    box-shadow: 2px 2px 0 #5a3e1b;
+    border-radius: 0;
+
+    padding: 8px 10px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    outline: none;
 }
 
+input::placeholder {
+    color: #a08060;
+    font-size: 8px;
+}
+
+input:focus {
+    background: #fffae8;
+    border-color: #3a5a1e;
+    box-shadow: 2px 2px 0 #3a5a1e;
+}
+
+
 /* ========================
-   CHAT LAYOUT WRAPPER
+   BUTTONS
 ======================== */
 
-body {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+button {
+    background: #8ab86e;
+    color: #1a2e0a;
+
+    border: 2px solid #3a5a1e;
+    box-shadow: 3px 3px 0 #3a5a1e;
+    border-radius: 0;
+
+    padding: 8px 12px;
+    margin-left: 4px;
+
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    font-weight: normal;
+    cursor: pointer;
+
+    transition: transform 0.08s, box-shadow 0.08s;
+    text-transform: uppercase;
 }
 
+button:hover {
+    background: #9acc7a;
+    transform: translateY(-2px);
+    box-shadow: 4px 4px 0 #3a5a1e;
+}
+
+button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 #3a5a1e;
+}
+
+
 /* ========================
-   INPUT BAR (bottom dock)
+   INPUT BAR
 ======================== */
 
 .input-bar {
-    width: 500px;
-
+    width: 520px;
     display: flex;
-    gap: 8px;
-
+    gap: 6px;
     margin-top: 8px;
 }
 
 .input-bar input {
     flex: 1;
-    height: 42px;
-
-    padding: 0 12px;
-
-    border-radius: 10px;
+    height: 40px;
+    padding: 0 10px;
 }
 
 .input-bar button {
-    width: 90px;
-    height: 42px;
+    height: 40px;
+    width: 80px;
+    margin-left: 0;
 }
+
 
 /* ========================
    EMOJI BUTTON
 ======================== */
 
 .emoji-btn {
-    width: 42px;
-    height: 42px;
-    font-size: 20px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
     padding: 0;
+    margin-left: 0;
+    background: #e8c86e;
+    border-color: #7a5c1e;
+    box-shadow: 3px 3px 0 #7a5c1e;
+    color: #2a1a0e;
+}
+
+.emoji-btn:hover {
+    background: #f0d47a;
+    box-shadow: 4px 4px 0 #7a5c1e;
+}
+
+.emoji-btn:active {
+    box-shadow: 1px 1px 0 #7a5c1e;
 }
 
 
@@ -282,97 +350,120 @@ body {
 ======================== */
 
 .emoji-picker {
-    width: 500px;
-    max-height: 160px;
+    width: 520px;
+    max-height: 140px;
 
     display: grid;
     grid-template-columns: repeat(10, 1fr);
-    gap: 6px;
+    gap: 4px;
 
-    padding: 10px;
+    padding: 8px;
     margin-top: 6px;
 
-    background: #1b1b25;
-    border-radius: 10px;
+    background: #e8d8a8;
+    border: 2px solid #5a3e1b;
+    box-shadow: 3px 3px 0 #5a3e1b;
 
     overflow-y: auto;
 }
 
 .emoji-picker span {
     cursor: pointer;
-    font-size: 20px;
+    font-size: 18px;
     text-align: center;
-    padding: 4px;
-    border-radius: 6px;
+    padding: 3px;
+    image-rendering: auto;
 }
 
 .emoji-picker span:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(90, 62, 27, 0.15);
+    outline: 1px solid #5a3e1b;
 }
 
 .hidden {
     display: none;
 }
 
-.chat-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
+
+/* ========================
+   ROOM CONTROLS
+======================== */
 
 .room-controls {
-    margin-top: 14px;
+    margin-top: 12px;
     text-align: center;
 }
 
 .join-row {
     margin: 6px 0;
-}
-
-/* ========================
-   LAYOUT (chat + sidebar)
-======================== */
-
-.layout {
     display: flex;
-    gap: 14px;
-    align-items: stretch;
+    justify-content: center;
+    gap: 6px;
 }
+
+.join-row input {
+    width: 140px;
+    height: 36px;
+    font-size: 8px;
+}
+
+.join-row button {
+    height: 36px;
+    margin-left: 0;
+}
+
 
 /* ========================
    USERS PANEL
 ======================== */
 
 .users-panel {
-    width: 180px;
-    background: rgba(20, 20, 28, 0.95);
-    border-radius: 12px;
-    padding: 10px;
+    width: 160px;
+    background: #d4c49a;
+    border: 3px solid #5a3e1b;
+    box-shadow: 4px 4px 0 #5a3e1b;
 
+    padding: 10px;
     display: flex;
     flex-direction: column;
-
     overflow-y: auto;
 }
 
 .users-panel h3 {
-    margin: 0 0 8px 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: #9a9ab0;
+    margin: 0 0 10px 0;
+    font-size: 8px;
+    font-family: 'Press Start 2P', monospace;
+    color: #5a3e1b;
     text-align: center;
+    text-transform: uppercase;
+    border-bottom: 2px solid #5a3e1b;
+    padding-bottom: 6px;
 }
 
 .user {
-    font-size: 13px;
-    margin: 4px 0;
-    font-weight: 500;
+    font-size: 8px;
+    font-family: 'Press Start 2P', monospace;
+    margin: 5px 0;
+    padding: 3px 4px;
+    word-break: break-all;
+    line-height: 1.5;
 }
 
 .user.online {
     opacity: 1;
 }
 
+.user.online::before {
+    content: '▶ ';
+    color: #4a8a2e;
+    font-size: 7px;
+}
+
 .user.offline {
-    opacity: 0.4;
+    opacity: 0.45;
+}
+
+.user.offline::before {
+    content: '▷ ';
+    font-size: 7px;
 }

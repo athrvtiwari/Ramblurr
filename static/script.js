@@ -1,14 +1,14 @@
 // DYNAMIC TITLE
 
 const titles = ["W", "We", "Wel", "Welc", "Welco", "Welcom", "Welcome ", "Welcome t", "Welcome to ", "Welcome to R", "Welcome to Ra", "Welcome to Ram", "Welcome to Ramb", "Welcome to Rambl", "Welcome to Ramblu", "Welcome to Ramblur", "Welcome to Ramblurr", "Welcome to Ramblurr!", "~ Enjoy your stay! ~", ". Enjoy your stay! .", "~ Enjoy your stay! ~", ". Enjoy your stay! .", "~ Enjoy your stay! ~", ". Enjoy your stay! .", "~ Enjoy your stay! ~"];
-        let index = 0;
+let index = 0;
 
-        function changeTitle() {
-            document.title = titles[index];
-            index = (index + 1) % titles.length;
-        } 
+function changeTitle() {
+    document.title = titles[index];
+    index = (index + 1) % titles.length;
+}
 
-        setInterval(changeTitle, 250);
+setInterval(changeTitle, 250);
 
 // DEVICE ID
 
@@ -16,29 +16,15 @@ let deviceId = localStorage.getItem("deviceId");
 
 if (!deviceId) {
     deviceId = crypto.randomUUID();
-    localStorage.setItem("deviceId", deviceId);x
+    localStorage.setItem("deviceId", deviceId);
 }
 
-let username = localStorage.getItem("username");
+let username = localStorage.getItem("username") || null;
 
 if (!username) {
-    username = prompt("Enter a username (3-20 characters, letters/numbers/_):");
-
-    if (username) {
-        fetch("/set_username", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                device: deviceId,
-                name: username
-            })
-        }).then(res => res.json()).then(data => {
-            if (data.success) {
-                localStorage.setItem("username", username);
-            } else {
-                alert(data.error);
-            }
-        });
+    const input_name = prompt("Enter a username (3-20 chars, letters/numbers/_):\nLeave blank for an anonymous name.");
+    if (input_name && input_name.trim()) {
+        username = input_name.trim();
     }
 }
 
@@ -91,7 +77,6 @@ function addMessage(sender, text, side) {
     const name = document.createElement("div");
     name.className = "sender";
     name.textContent = sender;
-
     name.style.color = nameToColor(sender);
 
     const bubble = document.createElement("div");
@@ -130,9 +115,7 @@ function renderUsers(online, all) {
         const div = document.createElement("div");
         div.className = "user " + (online.includes(name) ? "online" : "offline");
         div.textContent = name;
-
         div.style.color = nameToColor(name);
-
         userList.appendChild(div);
     }
 }
@@ -153,14 +136,15 @@ function sendImage(file) {
 // SOCKET EVENTS
 
 ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "auth", deviceId, username}));
+    ws.send(JSON.stringify({ type: "auth", deviceId, username }));
     addSystem("[Connected]");
 };
 
 ws.onerror = () => addSystem("[Connection error]");
 
-ws.onmessage = (e) => {
+ws.onclose = () => addSystem("[Disconnected]");
 
+ws.onmessage = (e) => {
     if (e.data instanceof Blob) {
         addImage(e.data, "other");
         return;
@@ -175,19 +159,26 @@ ws.onmessage = (e) => {
             renderUsers(data.online, data.all);
             return;
         }
-    } catch {}
 
-    const joinMatch = text.match(/^\[(.+?) joined\]$/);
-    if (joinMatch && !myName) {
-        myName = joinMatch[1];
-    }
+        if (data.type === "auth_ok") {
+            myName = data.username;
+            localStorage.setItem("username", myName);
+
+            if (username && username !== myName) {
+                addSystem(`[Username "${username}" was unavailable. You are "${myName}"]`);
+            }
+            return;
+        }
+
+        return;
+    } catch {}
 
     const msgMatch = text.match(/^([^:]+):\s(.+)$/);
 
     if (msgMatch) {
         const sender = msgMatch[1];
         const content = msgMatch[2];
-        const side = sender === myName ? "self" : "other";
+        const side = (myName && sender === myName) ? "self" : "other";
         addMessage(sender, content, side);
     } else {
         addSystem(text);
@@ -268,12 +259,12 @@ const emojis = [
     "🍕","🍔","🍟","🥤","🎮","⚽","🏆","🚀","🌙","☀️"
 ];
 
-emojis.forEach(e => {
+emojis.forEach(emoji => {
     const span = document.createElement("span");
-    span.textContent = e;
+    span.textContent = emoji;
 
     span.onclick = () => {
-        input.value += e;
+        input.value += emoji;
         input.focus();
     };
 
